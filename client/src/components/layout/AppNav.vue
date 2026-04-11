@@ -7,6 +7,7 @@ const links = [
   { to: '/evidence', label: 'Price Evidence' },
   { to: '/flagged', label: 'Flagged Items' },
   { to: '/trends', label: 'Trends' },
+  { to: '/history', label: 'History' },
   { to: '/settings', label: 'Settings' },
 ] as const;
 </script>

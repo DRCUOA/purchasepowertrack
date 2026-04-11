@@ -1,6 +1,7 @@
 import type { BasketItem, BasketItemWithQuantity } from './basket.js';
 import type { PriceObservation, NormalizedPrice } from './price.js';
 import type { MonthlySnapshotDetail, MonthSummary } from './snapshot.js';
+import type { RunHistoryEntry } from './history.js';
 
 // --- Error ---
 
@@ -105,6 +106,12 @@ export interface SnapshotRunResponse {
   snapshot_month: string;
   items_snapshotted: number;
   basket_total: number;
+}
+
+// --- History ---
+
+export interface RunHistoryResponse {
+  runs: RunHistoryEntry[];
 }
 
 // --- Settings ---

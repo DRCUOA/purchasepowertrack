@@ -2,14 +2,16 @@ import type {
   RefreshRunResponse,
   PriceObservationInsert,
   PriceObservation,
+  RunHistoryItemSnapshot,
 } from '@basket/shared';
-import { getWeekStart, computeMedian } from '@basket/shared';
+import { getWeekStart, computeMedian, getCurrentMonth, DEFAULT_MONTHLY_QUANTITIES } from '@basket/shared';
 import { config } from '../config.js';
 import { getEnabledAdapters } from '../adapters/retailers/index.js';
 import { runWithConcurrency } from '../lib/run-with-concurrency.js';
 import * as basketItemRepo from '../repositories/basket-item.repo.js';
 import * as priceObservationRepo from '../repositories/price-observation.repo.js';
 import * as normalizedPriceRepo from '../repositories/normalized-price.repo.js';
+import * as runHistoryRepo from '../repositories/run-history.repo.js';
 import { reviewPendingObservations } from './review.service.js';
 
 /** LLM review calls are the dominant cost; cap parallel calls to reduce rate-limit risk */
@@ -180,6 +182,52 @@ export async function runRefresh(): Promise<RefreshRunResponse> {
   console.log(
     `[Refresh] Finished in ${durationMs}ms — ${totalObservations} collected, ${totalReviewed} reviewed, ${errors.length} errors`,
   );
+
+  const currentMonth = getCurrentMonth();
+  const itemsWithQty = await basketItemRepo.findAllWithQuantity(currentMonth);
+  const qtyByItemId = new Map(
+    itemsWithQty.map((i) => [i.id, i.monthly_quantity ?? DEFAULT_MONTHLY_QUANTITIES[i.item_key] ?? 1]),
+  );
+
+  const historyItems: RunHistoryItemSnapshot[] = [];
+  let refreshBasketTotal = 0;
+  for (const item of items) {
+    const np = await normalizedPriceRepo.findLatestByItem(item.id);
+    if (np) {
+      const quantity = qtyByItemId.get(item.id) ?? 1;
+      const lineTotal = Number((quantity * np.canonical_unit_price).toFixed(2));
+      historyItems.push({
+        item_key: item.item_key,
+        name: item.name,
+        unit_price: np.canonical_unit_price,
+        quantity,
+        line_total: lineTotal,
+        observation_count: np.observation_count,
+        accepted_count: np.accepted_count,
+      });
+      refreshBasketTotal += lineTotal;
+    }
+  }
+
+  try {
+    await runHistoryRepo.insert({
+      run_type: 'refresh',
+      started_at: new Date(startTime),
+      completed_at: new Date(),
+      status,
+      basket_total: historyItems.length > 0 ? Number(refreshBasketTotal.toFixed(2)) : null,
+      item_count: historyItems.length,
+      summary: {
+        observations_collected: totalObservations,
+        observations_reviewed: totalReviewed,
+        errors_count: errors.length,
+        duration_ms: durationMs,
+      },
+      items: historyItems,
+    });
+  } catch (err) {
+    console.error('[Refresh] Failed to log run history:', err);
+  }
 
   return {
     status,

@@ -8,6 +8,7 @@ import { dashboardRoutes } from './routes/dashboard.routes.js';
 import { refreshRoutes } from './routes/refresh.routes.js';
 import { settingsRoutes } from './routes/settings.routes.js';
 import { trendsRoutes } from './routes/trends.routes.js';
+import { historyRoutes } from './routes/history.routes.js';
 import { logsRoutes } from './routes/logs.routes.js';
 import { config } from './config.js';
 
@@ -27,6 +28,7 @@ export function createApp(): express.Application {
   app.use('/api/refresh', refreshRoutes);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/trends', trendsRoutes);
+  app.use('/api/history', historyRoutes);
   app.use('/api/logs', logsRoutes);
 
   app.use(errorHandler);

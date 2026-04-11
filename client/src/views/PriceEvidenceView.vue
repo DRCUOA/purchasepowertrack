@@ -6,6 +6,9 @@ import { useBasketStore } from '../stores/basket';
 import { usePricesStore } from '../stores/prices';
 import ObservationCard from '../components/evidence/ObservationCard.vue';
 import ReviewSummary from '../components/evidence/ReviewSummary.vue';
+import { useFormatters } from '../composables/useFormatters';
+
+const { formatDate } = useFormatters();
 
 const route = useRoute();
 const router = useRouter();
@@ -104,7 +107,7 @@ const evidence = computed(() => {
               :key="week"
               :value="week"
             >
-              {{ week }}
+              {{ formatDate(week) }}
             </option>
           </select>
         </div>

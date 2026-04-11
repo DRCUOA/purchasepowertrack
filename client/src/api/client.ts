@@ -9,6 +9,7 @@ import type {
   RefreshRunResponse,
   SnapshotRunResponse,
   SettingsResponse,
+  RunHistoryResponse,
 } from '@basket/shared';
 
 const API_BASE = '/api';
@@ -94,6 +95,15 @@ export function triggerSnapshot(month?: string): Promise<SnapshotRunResponse> {
     method: 'POST',
     body: month ? JSON.stringify({ month }) : undefined,
   });
+}
+
+export function fetchRunHistory(limit?: number): Promise<RunHistoryResponse> {
+  const params = limit ? `?limit=${limit}` : '';
+  return request<RunHistoryResponse>('/history' + params);
+}
+
+export function deleteRunHistory(id: number): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>('/history/' + id, { method: 'DELETE' });
 }
 
 export function fetchSettings(): Promise<SettingsResponse> {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, nextTick, computed } from 'vue';
+import { formatDateTime } from '@basket/shared';
 
 interface LogEntry {
   timestamp: string;
@@ -34,11 +35,6 @@ function handleScroll() {
 
 function clearConsole() {
   lines.value = [];
-}
-
-function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString('en-NZ', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0');
 }
 
 function connect() {
@@ -105,7 +101,7 @@ onBeforeUnmount(() => {
         :key="i"
         :class="['console-line', `console-line--${entry.level}`]"
       >
-        <span class="console-ts">{{ formatTimestamp(entry.timestamp) }}</span>
+        <span class="console-ts">{{ formatDateTime(entry.timestamp) }}</span>
         <span :class="['console-level', `console-level--${entry.level}`]">{{ entry.level.toUpperCase().padEnd(5) }}</span>
         <span class="console-msg">{{ entry.message }}</span>
       </div>

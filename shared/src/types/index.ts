@@ -6,6 +6,7 @@ export type {
   NormalizedPrice,
 } from './price.js';
 export type { MonthlySnapshot, MonthlySnapshotDetail, MonthSummary } from './snapshot.js';
+export type { RunHistoryEntry, RunHistoryItemSnapshot } from './history.js';
 export type {
   LLMReviewRequest,
   LLMObservationInput,
@@ -26,4 +27,5 @@ export type {
   RefreshRunResponse,
   SnapshotRunResponse,
   SettingsResponse,
+  RunHistoryResponse,
 } from './api.js';

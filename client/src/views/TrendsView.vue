@@ -10,7 +10,7 @@ import { useFormatters } from '../composables/useFormatters';
 const basket = useBasketStore();
 const prices = usePricesStore();
 const dashboard = useDashboardStore();
-const { formatCurrency, formatMonth, formatPercent } = useFormatters();
+const { formatCurrency, formatDate, formatMonth, formatPercent } = useFormatters();
 
 const selectedItemKey = ref<string>('');
 const trendsData = ref<TrendsResponse | null>(null);
@@ -57,6 +57,17 @@ function indexClass(value: number): string {
   if (value > 100) return 'index-up';
   if (value < 100) return 'index-down';
   return '';
+}
+
+function pctDelta(current: number, previous: number): { text: string; cls: string } | null {
+  if (!previous) return null;
+  const pct = ((current - previous) / previous) * 100;
+  if (Math.abs(pct) < 0.05) return null;
+  const sign = pct > 0 ? '+' : '';
+  return {
+    text: `${sign}${pct.toFixed(1)}%`,
+    cls: pct > 0 ? 'delta-up' : 'delta-down',
+  };
 }
 </script>
 
@@ -126,7 +137,14 @@ function indexClass(value: number): string {
                   {{ formatMonth(point.snapshot_month) }}
                   <span v-if="point.snapshot_month === trendsData.baseline_month" class="badge badge-baseline">baseline</span>
                 </td>
-                <td class="num">{{ formatCurrency(trendsData.months[i]?.basket_total ?? 0) }}</td>
+                <td class="num">
+                  {{ formatCurrency(trendsData.months[i]?.basket_total ?? 0) }}
+                  <sup
+                    v-if="i < trendsData.index_series.length - 1 && trendsData.months[i] && trendsData.months[i + 1] && pctDelta(trendsData.months[i]!.basket_total, trendsData.months[i + 1]!.basket_total)"
+                    :class="pctDelta(trendsData.months[i]!.basket_total, trendsData.months[i + 1]!.basket_total)!.cls"
+                    class="delta"
+                  >{{ pctDelta(trendsData.months[i]!.basket_total, trendsData.months[i + 1]!.basket_total)!.text }}</sup>
+                </td>
                 <td class="num" :class="indexClass(point.index_value)">{{ point.index_value.toFixed(1) }}</td>
                 <td class="num">{{ trendsData.months[i]?.item_count ?? 0 }}</td>
               </tr>
@@ -172,9 +190,16 @@ function indexClass(value: number): string {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="h in itemHistory.history" :key="h.week_start">
-                <td>{{ h.week_start }}</td>
-                <td class="num">{{ formatCurrency(h.canonical_unit_price) }}</td>
+              <tr v-for="(h, idx) in itemHistory.history" :key="h.week_start">
+                <td>{{ formatDate(h.week_start) }}</td>
+                <td class="num">
+                  {{ formatCurrency(h.canonical_unit_price) }}
+                  <sup
+                    v-if="idx < itemHistory.history.length - 1 && pctDelta(h.canonical_unit_price, itemHistory.history[idx + 1].canonical_unit_price)"
+                    :class="pctDelta(h.canonical_unit_price, itemHistory.history[idx + 1].canonical_unit_price)!.cls"
+                    class="delta"
+                  >{{ pctDelta(h.canonical_unit_price, itemHistory.history[idx + 1].canonical_unit_price)!.text }}</sup>
+                </td>
                 <td class="num">{{ h.observation_count }}</td>
               </tr>
             </tbody>
@@ -266,5 +291,21 @@ function indexClass(value: number): string {
   font-size: var(--text-lg);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+.delta {
+  margin-left: 4px;
+  font-size: 0.7em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  vertical-align: super;
+}
+
+.delta-up {
+  color: var(--color-danger);
+}
+
+.delta-down {
+  color: var(--color-success);
 }
 </style>

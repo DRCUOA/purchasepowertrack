@@ -1,14 +1,15 @@
+import {
+  formatDate,
+  formatDateTime,
+  formatMonth,
+} from '@basket/shared';
+
 const currencyFmt = new Intl.NumberFormat('en-NZ', {
   style: 'currency',
   currency: 'NZD',
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
-
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-] as const;
 
 export function useFormatters() {
   function formatCurrency(value: number): string {
@@ -19,21 +20,6 @@ export function useFormatters() {
     if (value === null || value === undefined) return '—';
     const sign = value > 0 ? '+' : '';
     return `${sign}${value.toFixed(1)}%`;
-  }
-
-  function formatDate(dateStr: string): string {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-NZ', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  }
-
-  function formatMonth(monthStr: string): string {
-    const [year, month] = monthStr.split('-');
-    const idx = parseInt(month, 10) - 1;
-    return `${MONTHS[idx]} ${year}`;
   }
 
   function formatChange(
@@ -53,5 +39,5 @@ export function useFormatters() {
     };
   }
 
-  return { formatCurrency, formatPercent, formatDate, formatMonth, formatChange };
+  return { formatCurrency, formatPercent, formatDate, formatDateTime, formatMonth, formatChange };
 }
