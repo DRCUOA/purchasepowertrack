@@ -4,40 +4,25 @@ import type { LLMReviewRequest, LLMReviewResponse, LLMObservationReview } from '
 
 const client = new OpenAI({ apiKey: config.openaiApiKey });
 
-const SYSTEM_PROMPT = `You are a price observation reviewer for a New Zealand grocery basket tracker.
+const SYSTEM_PROMPT = `You review price observations for a New Zealand grocery basket tracker.
 
-Your task: Review price observations scraped from NZ supermarket websites and classify each as "accept" or "reject".
+Classify each observation as "accept" or "reject".
 
-ACCEPT observations that:
-- Match the basket item description (correct product, correct size/weight)
-- Represent standard shelf pricing (regular everyday price)
-- Are priced in NZD
+ACCEPT when: correct product, correct size/weight, standard shelf price in NZD.
 
-REJECT observations that:
-- Are specials, promotions, or temporary sale prices
-- Are member-only or club-card pricing
-- Are multi-buy deals (e.g. "2 for $5")
-- Are premium or organic variants when the basket item is standard
-- Are the wrong size or weight for the basket item
-- Are clearly a different product from the basket item
-- Have suspicious or implausible prices
+REJECT when: special/sale price, member/club-card price, multi-buy deal, wrong variant (premium/organic when standard is wanted), wrong size/weight, different product, implausible price.
 
-For each observation, in the exact order given:
-1. Set "decision" to "accept" or "reject"
-2. Provide a brief "reason" explaining your decision
-3. Set "normalized_unit_price" to the price normalized to the basket item's canonical unit (or null if you cannot normalize)
-4. Set "confidence" from 0 to 1
+For every observation (in order, one review per observation):
+- "decision": "accept" or "reject"
+- "reason": brief explanation (one sentence)
+- "normalized_unit_price": price in the basket item's canonical unit, or null
+- "confidence": 0–1
 
-CRITICAL: Return exactly one review per observation, in the same order the observations are listed. The reviews array must have the same length as the observations list.
+Also return:
+- "recommended_canonical_price": median of accepted normalized prices (or null)
+- "summary": one-sentence batch summary
 
-Also provide:
-- "recommended_canonical_price": the median of accepted normalized prices (or null if no accepts)
-- "summary": a brief summary of the review batch
-
-Rules:
-- Never invent prices or data not present in the observations
-- If uncertain, reject the observation
-- Be conservative: it is better to reject a valid observation than accept a bad one`;
+Rules: never invent data; if uncertain, reject.`;
 
 const reviewResponseSchema = {
   type: 'object' as const,
@@ -154,12 +139,55 @@ function validateResponse(
   };
 }
 
+/**
+ * ~100 tokens per review object; keep batches small enough that the response
+ * never hits the output-token ceiling even with verbose reasons.
+ */
+const MAX_OBSERVATIONS_PER_CALL = 15;
+
+/** Generous ceiling so the model never truncates mid-JSON. */
+const REVIEW_MAX_TOKENS = 4096;
+
 export async function reviewObservations(
+  request: LLMReviewRequest,
+): Promise<LLMReviewResponse> {
+  if (request.observations.length <= MAX_OBSERVATIONS_PER_CALL) {
+    return reviewObservationsBatch(request);
+  }
+
+  const allReviews: LLMObservationReview[] = [];
+  let lastCanonicalPrice: number | null = null;
+  const summaries: string[] = [];
+
+  for (let i = 0; i < request.observations.length; i += MAX_OBSERVATIONS_PER_CALL) {
+    const chunk = request.observations.slice(i, i + MAX_OBSERVATIONS_PER_CALL);
+    const chunkRequest: LLMReviewRequest = {
+      basket_item: request.basket_item,
+      observations: chunk,
+    };
+    const chunkResponse = await reviewObservationsBatch(chunkRequest);
+    allReviews.push(...chunkResponse.reviews);
+    if (chunkResponse.recommended_canonical_price !== null) {
+      lastCanonicalPrice = chunkResponse.recommended_canonical_price;
+    }
+    summaries.push(chunkResponse.summary);
+  }
+
+  return {
+    item_key: request.basket_item.item_key,
+    reviews: allReviews,
+    recommended_canonical_price: lastCanonicalPrice,
+    summary: summaries.join(' | '),
+  };
+}
+
+async function reviewObservationsBatch(
   request: LLMReviewRequest,
 ): Promise<LLMReviewResponse> {
   const completion = await client.chat.completions.create({
     model: 'gpt-4o-mini',
     temperature: 0.1,
+    max_tokens: REVIEW_MAX_TOKENS,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: buildUserPrompt(request) },
@@ -174,16 +202,25 @@ export async function reviewObservations(
     },
   });
 
-  const content = completion.choices[0]?.message?.content;
-  if (!content) {
+  const choice = completion.choices[0];
+  if (!choice?.message?.content) {
     throw new Error('OpenAI returned empty response');
   }
 
+  if (choice.finish_reason === 'length') {
+    throw new Error(
+      `OpenAI response truncated (finish_reason=length) for ${request.observations.length} observations — batch is too large for the token limit`,
+    );
+  }
+
+  const content = choice.message.content;
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
   } catch {
-    throw new Error(`OpenAI returned invalid JSON: ${content.slice(0, 200)}`);
+    throw new Error(
+      `OpenAI returned invalid JSON (finish_reason=${choice.finish_reason}): ${content.slice(0, 200)}`,
+    );
   }
 
   return validateResponse(parsed, request);

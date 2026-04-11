@@ -134,6 +134,7 @@ export class OpenAISearchAdapter implements RetailerAdapter {
     const extraction = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       temperature: 0.1,
+      max_tokens: 2048,
       messages: [
         {
           role: 'system',
@@ -167,17 +168,26 @@ export class OpenAISearchAdapter implements RetailerAdapter {
       },
     });
 
-    const content = extraction.choices[0]?.message?.content;
-    if (!content) {
+    const choice = extraction.choices[0];
+    if (!choice?.message?.content) {
       console.warn(`[OpenAI Search] Extraction returned empty for "${item.name}"`);
+      return [];
+    }
+
+    if (choice.finish_reason === 'length') {
+      console.warn(
+        `[OpenAI Search] Extraction truncated (finish_reason=length) for "${item.name}", skipping`,
+      );
       return [];
     }
 
     let results: ExtractionResponse;
     try {
-      results = JSON.parse(content) as ExtractionResponse;
+      results = JSON.parse(choice.message.content) as ExtractionResponse;
     } catch {
-      console.warn(`[OpenAI Search] Invalid JSON from extraction for "${item.name}"`);
+      console.warn(
+        `[OpenAI Search] Invalid JSON from extraction for "${item.name}" (finish_reason=${choice.finish_reason})`,
+      );
       return [];
     }
 

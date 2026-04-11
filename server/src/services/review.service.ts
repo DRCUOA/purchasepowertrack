@@ -10,6 +10,13 @@ import * as openaiAdapter from '../adapters/openai.adapter.js';
 
 const RETRY_DELAY_MS = 2_000;
 
+/**
+ * Safety cap: never send more than this many pending observations into a
+ * single review cycle. Oldest-first ensures stale leftovers don't block
+ * newer data indefinitely. The adapter itself further chunks within this cap.
+ */
+const MAX_PENDING_PER_REVIEW = 60;
+
 interface ReviewResult {
   reviewed: number;
   accepted: number;
@@ -29,9 +36,16 @@ export async function reviewPendingObservations(
     return { reviewed: 0, accepted: 0, rejected: 0 };
   }
 
-  const pending = await priceObservationRepo.findPendingByItem(basketItemId);
+  let pending = await priceObservationRepo.findPendingByItem(basketItemId);
   if (pending.length === 0) {
     return { reviewed: 0, accepted: 0, rejected: 0 };
+  }
+
+  if (pending.length > MAX_PENDING_PER_REVIEW) {
+    console.warn(
+      `[Review] Item "${item.name}" has ${pending.length} pending observations, capping to ${MAX_PENDING_PER_REVIEW}`,
+    );
+    pending = pending.slice(0, MAX_PENDING_PER_REVIEW);
   }
 
   const observations: LLMObservationInput[] = pending.map((obs) => ({
@@ -60,16 +74,16 @@ export async function reviewPendingObservations(
     response = await openaiAdapter.reviewObservations(request);
   } catch (firstErr) {
     console.warn(
-      `[Review] First LLM call failed for item "${item.name}", retrying in ${RETRY_DELAY_MS}ms:`,
-      firstErr,
+      `[Review] First LLM call failed for item "${item.name}" (${pending.length} observations), retrying in ${RETRY_DELAY_MS}ms:`,
+      firstErr instanceof Error ? firstErr.message : firstErr,
     );
     await sleep(RETRY_DELAY_MS);
     try {
       response = await openaiAdapter.reviewObservations(request);
     } catch (retryErr) {
       console.error(
-        `[Review] Retry also failed for item "${item.name}", leaving observations pending:`,
-        retryErr,
+        `[Review] Retry also failed for item "${item.name}", leaving ${pending.length} observations pending:`,
+        retryErr instanceof Error ? retryErr.message : retryErr,
       );
       return { reviewed: 0, accepted: 0, rejected: 0 };
     }

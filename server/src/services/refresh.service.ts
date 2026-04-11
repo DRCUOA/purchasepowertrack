@@ -13,6 +13,7 @@ import * as priceObservationRepo from '../repositories/price-observation.repo.js
 import * as normalizedPriceRepo from '../repositories/normalized-price.repo.js';
 import * as runHistoryRepo from '../repositories/run-history.repo.js';
 import { reviewPendingObservations } from './review.service.js';
+import { runSnapshot } from './snapshot.service.js';
 
 /** LLM review calls are the dominant cost; cap parallel calls to reduce rate-limit risk */
 const REVIEW_CONCURRENCY = 4;
@@ -229,11 +230,20 @@ export async function runRefresh(): Promise<RefreshRunResponse> {
     console.error('[Refresh] Failed to log run history:', err);
   }
 
+  // Phase 5: Auto-update the monthly snapshot so dashboard/trends reflect new prices
+  try {
+    await runSnapshot();
+  } catch (err) {
+    const msg = `Snapshot update failed: ${err instanceof Error ? err.message : String(err)}`;
+    console.error(`[Refresh] ${msg}`);
+    errors.push(msg);
+  }
+
   return {
     status,
     observations_collected: totalObservations,
     observations_reviewed: totalReviewed,
     errors,
-    duration_ms: durationMs,
+    duration_ms: Date.now() - startTime,
   };
 }
