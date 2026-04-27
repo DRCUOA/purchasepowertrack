@@ -12,7 +12,12 @@ ACCEPT when: correct product, correct size/weight, standard shelf price in NZD.
 
 REJECT when: special/sale price, member/club-card price, multi-buy deal, wrong variant (premium/organic when standard is wanted), wrong size/weight, different product, implausible price.
 
-For every observation (in order, one review per observation):
+You MUST return exactly one review per observation, in the same order, with no omissions.
+Never skip an observation. If you cannot evaluate an observation (malformed data,
+missing fields, ambiguous product), reject it and explain the problem in "reason".
+The number of reviews in your response MUST equal the number of observations provided.
+
+For every observation (in order):
 - "decision": "accept" or "reject"
 - "reason": brief explanation (one sentence)
 - "normalized_unit_price": price in the basket item's canonical unit, or null
