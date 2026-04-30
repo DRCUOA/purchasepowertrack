@@ -5,8 +5,18 @@ export const router = createRouter({
   routes: [
     {
       path: '/',
-      name: 'dashboard',
+      name: 'analyse',
+      component: () => import('../views/AnalyseView.vue'),
+    },
+    {
+      path: '/operations',
+      name: 'operations',
       component: () => import('../views/DashboardView.vue'),
+    },
+    // Legacy alias — keeps old links / bookmarks working.
+    {
+      path: '/dashboard',
+      redirect: { name: 'operations' },
     },
     {
       path: '/basket',

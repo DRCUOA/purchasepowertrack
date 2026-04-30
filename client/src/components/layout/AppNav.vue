@@ -2,7 +2,8 @@
 import { RouterLink } from 'vue-router';
 
 const links = [
-  { to: '/', label: 'Dashboard' },
+  { to: '/', label: 'Analyse' },
+  { to: '/operations', label: 'Operations' },
   { to: '/basket', label: 'Basket Items' },
   { to: '/evidence', label: 'Price Evidence' },
   { to: '/flagged', label: 'Flagged Items' },
