@@ -7,7 +7,10 @@ import { useDashboardStore } from '../stores/dashboard';
 import { useFormatters } from '../composables/useFormatters';
 import {
   computePeriods,
-  PERIOD_DAYS,
+  clampPeriodDays,
+  DEFAULT_PERIOD_DAYS,
+  MIN_PERIOD_DAYS,
+  MAX_PERIOD_DAYS,
   type PeriodAnalysis,
 } from '../composables/usePeriodAnalysis';
 
@@ -21,6 +24,45 @@ const basket = useBasketStore();
 const prices = usePricesStore();
 const dashboard = useDashboardStore();
 const { formatCurrency, formatDate } = useFormatters();
+
+const ANALYSE_PERIOD_STORAGE_KEY = 'ppt.analyse.periodDays';
+const PERIOD_PRESETS = [7, 14, 20, 30] as const;
+
+function loadStoredPeriodDays(): number {
+  try {
+    const raw = localStorage.getItem(ANALYSE_PERIOD_STORAGE_KEY);
+    if (raw === null) return DEFAULT_PERIOD_DAYS;
+    return clampPeriodDays(parseInt(raw, 10));
+  } catch {
+    return DEFAULT_PERIOD_DAYS;
+  }
+}
+
+function persistPeriodDays(n: number) {
+  try {
+    localStorage.setItem(ANALYSE_PERIOD_STORAGE_KEY, String(n));
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+const periodDays = ref(loadStoredPeriodDays());
+
+const periodDaysModel = computed({
+  get: () => periodDays.value,
+  set: (v: number) => {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return;
+    const c = clampPeriodDays(Math.floor(v));
+    periodDays.value = c;
+    persistPeriodDays(c);
+  },
+});
+
+function setPeriodPreset(d: number) {
+  const c = clampPeriodDays(d);
+  periodDays.value = c;
+  persistPeriodDays(c);
+}
 
 const historiesLoading = ref(false);
 const historiesError = ref<string | null>(null);
@@ -57,7 +99,7 @@ watch(
 );
 
 const analysis = computed<PeriodAnalysis>(() =>
-  computePeriods(basket.items, prices.historyCache),
+  computePeriods(basket.items, prices.historyCache, periodDays.value),
 );
 
 const periodsAsc = computed(() => analysis.value.periods); // already chronological
@@ -125,7 +167,7 @@ const tileIndex = computed(() => {
   let annualised: string | null = null;
   if (periodsElapsed > 0) {
     const ratio = latest.index_value / 100;
-    const periodsPerYear = 365.25 / PERIOD_DAYS;
+    const periodsPerYear = 365.25 / periodDays.value;
     const annual = Math.pow(ratio, periodsPerYear / periodsElapsed) - 1;
     annualised = `${annual >= 0 ? '+' : ''}${(annual * 100).toFixed(1)}% / yr`;
   }
@@ -283,10 +325,40 @@ const summary = computed(() => {
 <template>
   <div class="analyse">
     <header class="analyse-header">
-      <h2 class="page-title">Analyse</h2>
+      <div class="analyse-header-row">
+        <h2 class="page-title">Analyse</h2>
+        <div class="period-control">
+          <label class="period-label" for="analyse-period-days">Period length</label>
+          <input
+            id="analyse-period-days"
+            v-model.number="periodDaysModel"
+            type="number"
+            class="input input-inline period-input"
+            :min="MIN_PERIOD_DAYS"
+            :max="MAX_PERIOD_DAYS"
+            step="1"
+            aria-describedby="analyse-period-hint"
+          />
+          <span id="analyse-period-hint" class="period-hint">
+            days ({{ MIN_PERIOD_DAYS }}–{{ MAX_PERIOD_DAYS }})
+          </span>
+          <div class="period-presets" role="group" aria-label="Quick period lengths">
+            <button
+              v-for="d in PERIOD_PRESETS"
+              :key="d"
+              type="button"
+              class="btn btn-ghost btn-sm period-preset"
+              :aria-pressed="periodDays === d"
+              @click="setPeriodPreset(d)"
+            >
+              {{ d }}
+            </button>
+          </div>
+        </div>
+      </div>
       <p class="page-sub">
-        How the NZ grocery basket is moving — measured in {{ PERIOD_DAYS }}-day periods
-        anchored on the first reported price.
+        How the NZ grocery basket is moving — measured in
+        <strong>{{ periodDays }}-day periods</strong> anchored on the first reported price.
         <template v-if="analysis.anchor_date">
           P1 starts <strong>{{ formatDate(analysis.anchor_date) }}</strong>.
         </template>
@@ -340,8 +412,8 @@ const summary = computed(() => {
 
       <div v-if="periodsAsc.length === 0" class="empty-state card">
         <p>
-          Not enough history yet to form a complete {{ PERIOD_DAYS }}-day period.
-          Once {{ PERIOD_DAYS }} days have elapsed since the first reported price,
+          Not enough history yet to form a complete {{ periodDays }}-day period.
+          Once {{ periodDays }} days have elapsed since the first reported price,
           P1 will appear here.
         </p>
       </div>
@@ -352,7 +424,7 @@ const summary = computed(() => {
           <div class="card">
             <div class="chart-head">
               <h3 class="card-title">Basket total over time</h3>
-              <p class="chart-sub">Cost of the fixed basket per {{ PERIOD_DAYS }}-day period</p>
+              <p class="chart-sub">Cost of the fixed basket per {{ periodDays }}-day period</p>
             </div>
             <BasketTotalChart :points="trendPoints" />
           </div>
@@ -422,7 +494,7 @@ const summary = computed(() => {
             </template>
           </p>
           <p class="analyse-meta">
-            Periods are 20 elapsed days from
+            Periods are {{ periodDays }} elapsed days from
             <strong>{{ analysis.anchor_date ? formatDate(analysis.anchor_date) : '—' }}</strong>.
             {{ periodsAsc.length }} completed period{{ periodsAsc.length === 1 ? '' : 's' }}.
             <template v-if="analysis.has_in_progress_period">
@@ -442,6 +514,48 @@ const summary = computed(() => {
 <style scoped>
 .analyse-header {
   margin-bottom: var(--space-6);
+}
+
+.analyse-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.period-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.period-label {
+  color: var(--color-text-secondary);
+  margin: 0;
+  font-weight: 500;
+}
+
+.period-input {
+  width: 4.25rem;
+}
+
+.period-hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.period-presets {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.period-preset[aria-pressed='true'] {
+  background: var(--color-border-light);
 }
 
 .page-sub {

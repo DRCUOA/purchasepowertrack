@@ -4,17 +4,29 @@ import type {
 } from '@basket/shared';
 
 /**
- * Analyse view reporting unit: 20 elapsed days from the first date for which
- * accepted price data is reported. This module reaggregates the existing weekly
- * canonical_unit_price + monthly_quantity data on the client into 20-day
- * "periods" (P1, P2, ...). The database/server are unchanged.
+ * Analyse view: aggregate weekly canonical_unit_price + monthly_quantity on the
+ * client into fixed-length periods (P1, P2, …) from the anchor date. Period
+ * length is chosen in the UI (clamped to MIN/MAX); DEFAULT_PERIOD_DAYS is the
+ * initial default. Database/server are unchanged.
  */
 
-export const PERIOD_DAYS = 20;
+export const DEFAULT_PERIOD_DAYS = 7;
+/** Alias for the recommended default period length. */
+export const PERIOD_DAYS = DEFAULT_PERIOD_DAYS;
+
+export const MIN_PERIOD_DAYS = 1;
+export const MAX_PERIOD_DAYS = 90;
+
 const DAYS_PER_MONTH = 365.25 / 12; // 30.4375
-/** Conversion factor: monthly_quantity → quantity per 20-day period. */
-export const QTY_FACTOR = PERIOD_DAYS / DAYS_PER_MONTH;
 const MS_PER_DAY = 86_400_000;
+
+export function clampPeriodDays(n: number): number {
+  if (!Number.isFinite(n)) return DEFAULT_PERIOD_DAYS;
+  return Math.min(
+    MAX_PERIOD_DAYS,
+    Math.max(MIN_PERIOD_DAYS, Math.trunc(n)),
+  );
+}
 
 export interface PeriodItem {
   item_key: string;
@@ -109,12 +121,14 @@ const EMPTY_ANALYSIS: PeriodAnalysis = {
 export function computePeriods(
   items: BasketItemWithQuantity[],
   histories: Record<string, PriceHistoryResponse | undefined>,
+  periodDays: number = DEFAULT_PERIOD_DAYS,
 ): PeriodAnalysis {
+  const pd = clampPeriodDays(periodDays);
   // Top-level safety net: this function feeds a Vue render path, so it must
   // never throw. Any unexpected input shape just yields the empty analysis
   // and the UI shows the empty state.
   try {
-    return computePeriodsInner(items, histories);
+    return computePeriodsInner(items, histories, pd);
   } catch (err) {
     if (typeof console !== 'undefined') {
       console.error('[usePeriodAnalysis] computePeriods failed:', err);
@@ -126,7 +140,9 @@ export function computePeriods(
 function computePeriodsInner(
   items: BasketItemWithQuantity[],
   histories: Record<string, PriceHistoryResponse | undefined>,
+  periodDays: number,
 ): PeriodAnalysis {
+  const qtyFactor = periodDays / DAYS_PER_MONTH;
   // 1. Anchor: earliest week_start with a canonical (= accepted) price.
   //    Skip rows whose date string we can't parse so a single bad row can't
   //    poison the comparison (NaN < anything === false, which would freeze
@@ -175,13 +191,13 @@ function computePeriodsInner(
   // 3. Determine number of completed periods.
   const today = todayDayIndex();
   const elapsed = today - anchorDayIdx + 1;
-  const completed = Math.max(0, Math.floor(elapsed / PERIOD_DAYS));
+  const completed = Math.max(0, Math.floor(elapsed / periodDays));
 
   const periods: PeriodPoint[] = [];
 
   for (let k = 1; k <= completed; k++) {
-    const startIdx = anchorDayIdx + (k - 1) * PERIOD_DAYS;
-    const endIdxExclusive = anchorDayIdx + k * PERIOD_DAYS;
+    const startIdx = anchorDayIdx + (k - 1) * periodDays;
+    const endIdxExclusive = anchorDayIdx + k * periodDays;
 
     let basketTotal = 0;
     const itemsData: PeriodItem[] = [];
@@ -206,7 +222,7 @@ function computePeriodsInner(
           }
         }
       }
-      const qty = (item.monthly_quantity ?? 0) * QTY_FACTOR;
+      const qty = (item.monthly_quantity ?? 0) * qtyFactor;
       const contribution = avg * qty;
       basketTotal += contribution;
       itemsData.push({
@@ -246,7 +262,7 @@ function computePeriodsInner(
   return {
     anchor_date: dayIndexToIso(anchorDayIdx),
     periods,
-    has_in_progress_period: elapsed > completed * PERIOD_DAYS,
+    has_in_progress_period: elapsed > completed * periodDays,
     elapsed_days: elapsed,
   };
 }

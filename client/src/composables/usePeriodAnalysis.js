@@ -1,52 +1,111 @@
 /**
- * Analyse view reporting unit: 20 elapsed days from the first date for which
- * accepted price data is reported. This module reaggregates the existing weekly
- * canonical_unit_price + monthly_quantity data on the client into 20-day
- * "periods" (P1, P2, ...). The database/server are unchanged.
+ * Analyse view: aggregate weekly canonical_unit_price + monthly_quantity on the
+ * client into fixed-length periods (P1, P2, …) from the anchor date. Period
+ * length is chosen in the UI (clamped to MIN/MAX); DEFAULT_PERIOD_DAYS is the
+ * initial default. Database/server are unchanged.
  */
-export const PERIOD_DAYS = 20;
+export const DEFAULT_PERIOD_DAYS = 7;
+/** Alias for the recommended default period length. */
+export const PERIOD_DAYS = DEFAULT_PERIOD_DAYS;
+export const MIN_PERIOD_DAYS = 1;
+export const MAX_PERIOD_DAYS = 90;
 const DAYS_PER_MONTH = 365.25 / 12; // 30.4375
-/** Conversion factor: monthly_quantity → quantity per 20-day period. */
-export const QTY_FACTOR = PERIOD_DAYS / DAYS_PER_MONTH;
 const MS_PER_DAY = 86_400_000;
+export function clampPeriodDays(n) {
+    if (!Number.isFinite(n))
+        return DEFAULT_PERIOD_DAYS;
+    return Math.min(MAX_PERIOD_DAYS, Math.max(MIN_PERIOD_DAYS, Math.trunc(n)));
+}
 // ----------------------------------------------------------------- date utils
-function dayIndex(yyyyMmDd) {
-    // Anchor on UTC midnight to avoid DST drift.
-    const d = new Date(yyyyMmDd + 'T00:00:00Z');
-    return Math.floor(d.getTime() / MS_PER_DAY);
+const MONTH_ABBR = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+/**
+ * Convert a date-ish string to a UTC day index (days since Unix epoch).
+ *
+ * Robust to the formats the API actually emits: bare "YYYY-MM-DD",
+ * "YYYY-MM-DDTHH:MM:SS.sssZ" (Postgres DATE → JSON), and "YYYY-MM-DD HH:MM:SS".
+ * Returns NaN for anything we can't parse so callers can skip it.
+ */
+function dayIndex(s) {
+    if (!s)
+        return NaN;
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (!m)
+        return NaN;
+    const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    if (Number.isNaN(ms))
+        return NaN;
+    return Math.floor(ms / MS_PER_DAY);
 }
 function dayIndexToIso(idx) {
-    return new Date(idx * MS_PER_DAY).toISOString().slice(0, 10);
+    if (!Number.isFinite(idx))
+        return '';
+    const d = new Date(idx * MS_PER_DAY);
+    if (Number.isNaN(d.getTime()))
+        return '';
+    return d.toISOString().slice(0, 10);
 }
 function todayDayIndex() {
     return Math.floor(Date.now() / MS_PER_DAY);
 }
 function formatShort(yyyyMmDd) {
-    const d = new Date(yyyyMmDd + 'T00:00:00Z');
-    // e.g. "25 May" — keep year off when the period falls in the current year.
-    const months = [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return `${d.getUTCDate()} ${months[d.getUTCMonth()]}`;
+    if (!yyyyMmDd)
+        return '—';
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(yyyyMmDd);
+    if (!m)
+        return '—';
+    const day = Number(m[3]);
+    const monthIdx = Number(m[2]) - 1;
+    if (!Number.isFinite(day) || monthIdx < 0 || monthIdx > 11)
+        return '—';
+    return `${day} ${MONTH_ABBR[monthIdx]}`;
 }
 // ----------------------------------------------------------------- core
-export function computePeriods(items, histories) {
+const EMPTY_ANALYSIS = {
+    anchor_date: null,
+    periods: [],
+    has_in_progress_period: false,
+    elapsed_days: 0,
+};
+export function computePeriods(items, histories, periodDays = DEFAULT_PERIOD_DAYS) {
+    const pd = clampPeriodDays(periodDays);
+    // Top-level safety net: this function feeds a Vue render path, so it must
+    // never throw. Any unexpected input shape just yields the empty analysis
+    // and the UI shows the empty state.
+    try {
+        return computePeriodsInner(items, histories, pd);
+    }
+    catch (err) {
+        if (typeof console !== 'undefined') {
+            console.error('[usePeriodAnalysis] computePeriods failed:', err);
+        }
+        return EMPTY_ANALYSIS;
+    }
+}
+function computePeriodsInner(items, histories, periodDays) {
+    const qtyFactor = periodDays / DAYS_PER_MONTH;
     // 1. Anchor: earliest week_start with a canonical (= accepted) price.
+    //    Skip rows whose date string we can't parse so a single bad row can't
+    //    poison the comparison (NaN < anything === false, which would freeze
+    //    the anchor at NaN forever).
     let anchorDayIdx = null;
     for (const item of items) {
         const h = histories[item.item_key];
         if (!h)
             continue;
         for (const w of h.history) {
-            if (w.canonical_unit_price > 0) {
-                const di = dayIndex(w.week_start);
-                if (anchorDayIdx === null || di < anchorDayIdx)
-                    anchorDayIdx = di;
-            }
+            if (!(w.canonical_unit_price > 0))
+                continue;
+            const di = dayIndex(w.week_start);
+            if (!Number.isFinite(di))
+                continue;
+            if (anchorDayIdx === null || di < anchorDayIdx)
+                anchorDayIdx = di;
         }
     }
-    if (anchorDayIdx === null) {
+    if (anchorDayIdx === null || !Number.isFinite(anchorDayIdx)) {
         return {
             anchor_date: null,
             periods: [],
@@ -66,16 +125,17 @@ export function computePeriods(items, histories) {
             dayIdx: dayIndex(w.week_start),
             price: w.canonical_unit_price,
         }))
+            .filter((e) => Number.isFinite(e.dayIdx))
             .sort((a, b) => a.dayIdx - b.dayIdx));
     }
     // 3. Determine number of completed periods.
     const today = todayDayIndex();
     const elapsed = today - anchorDayIdx + 1;
-    const completed = Math.max(0, Math.floor(elapsed / PERIOD_DAYS));
+    const completed = Math.max(0, Math.floor(elapsed / periodDays));
     const periods = [];
     for (let k = 1; k <= completed; k++) {
-        const startIdx = anchorDayIdx + (k - 1) * PERIOD_DAYS;
-        const endIdxExclusive = anchorDayIdx + k * PERIOD_DAYS;
+        const startIdx = anchorDayIdx + (k - 1) * periodDays;
+        const endIdxExclusive = anchorDayIdx + k * periodDays;
         let basketTotal = 0;
         const itemsData = [];
         for (const item of items) {
@@ -97,7 +157,7 @@ export function computePeriods(items, histories) {
                     }
                 }
             }
-            const qty = (item.monthly_quantity ?? 0) * QTY_FACTOR;
+            const qty = (item.monthly_quantity ?? 0) * qtyFactor;
             const contribution = avg * qty;
             basketTotal += contribution;
             itemsData.push({
@@ -133,7 +193,7 @@ export function computePeriods(items, histories) {
     return {
         anchor_date: dayIndexToIso(anchorDayIdx),
         periods,
-        has_in_progress_period: elapsed > completed * PERIOD_DAYS,
+        has_in_progress_period: elapsed > completed * periodDays,
         elapsed_days: elapsed,
     };
 }
