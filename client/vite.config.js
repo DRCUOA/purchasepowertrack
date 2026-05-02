@@ -1,6 +1,9 @@
+import path from 'node:path';
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { fileURLToPath, URL } from 'node:url';
+const clientDir = fileURLToPath(new URL('.', import.meta.url));
+const repoRoot = path.resolve(clientDir, '..');
 export default defineConfig({
     plugins: [vue()],
     resolve: {
@@ -10,6 +13,9 @@ export default defineConfig({
     },
     server: {
         port: 5173,
+        fs: {
+            allow: [clientDir, repoRoot],
+        },
         proxy: {
             '/api': {
                 target: 'http://localhost:3000',

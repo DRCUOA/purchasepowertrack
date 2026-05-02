@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { RouterLink } from 'vue-router';
 import { useDashboardStore } from '../stores/dashboard';
 import { triggerRefresh, triggerSnapshot } from '../api/client';
 import type { RefreshRunResponse, SnapshotRunResponse } from '@basket/shared';
@@ -120,6 +121,15 @@ async function runSnapshot() {
           </button>
         </div>
 
+        <p class="doc-link mt-3">
+          <RouterLink :to="{ name: 'auto-refresh-readme' }">
+            Preview auto-refresh setup guide
+          </RouterLink>
+          <span class="doc-link-hint">
+            — macOS LaunchAgent, logs, troubleshooting (README_Refresh_Auto.md)
+          </span>
+        </p>
+
         <div v-if="refreshResult" class="action-result card mt-4">
           <p>
             Refresh <strong>{{ refreshResult.status }}</strong>
@@ -187,6 +197,15 @@ async function runSnapshot() {
 .meta-value {
   font-size: var(--text-base);
   font-weight: 600;
+}
+
+.doc-link {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.doc-link-hint {
+  color: var(--color-text-muted);
 }
 
 .action-result {

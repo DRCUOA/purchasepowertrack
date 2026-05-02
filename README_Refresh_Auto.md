@@ -237,6 +237,8 @@ npm run refresh    # same work as the scheduled job
 npm run snapshot   # monthly snapshot (not scheduled here)
 ```
 
+In the web app, open **Operations** and use **Preview auto-refresh setup guide** to read this file in the browser (dev: in sync with the repo file; production: content is included at client build time).
+
 ---
 
 *Generated for local automation; not required for CI or production servers. For hosted deploys (e.g. Railway), use the platform’s cron / scheduled job instead.*

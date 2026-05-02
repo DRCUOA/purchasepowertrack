@@ -13,6 +13,11 @@ export const router = createRouter({
       name: 'operations',
       component: () => import('../views/DashboardView.vue'),
     },
+    {
+      path: '/docs/auto-refresh',
+      name: 'auto-refresh-readme',
+      component: () => import('../views/DocRefreshAutoView.vue'),
+    },
     // Legacy alias — keeps old links / bookmarks working.
     {
       path: '/dashboard',

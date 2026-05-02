@@ -1,4 +1,5 @@
 import { onMounted, ref } from 'vue';
+import { RouterLink } from 'vue-router';
 import { useDashboardStore } from '../stores/dashboard';
 import { triggerRefresh, triggerSnapshot } from '../api/client';
 import { useFormatters } from '../composables/useFormatters';
@@ -184,6 +185,23 @@ else if (__VLS_ctx.dashboard.data) {
         disabled: (__VLS_ctx.snapshotting),
     });
     (__VLS_ctx.snapshotting ? 'Generating...' : 'Generate Snapshot');
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({
+        ...{ class: "doc-link mt-3" },
+    });
+    const __VLS_12 = {}.RouterLink;
+    /** @type {[typeof __VLS_components.RouterLink, typeof __VLS_components.RouterLink, ]} */ ;
+    // @ts-ignore
+    const __VLS_13 = __VLS_asFunctionalComponent(__VLS_12, new __VLS_12({
+        to: ({ name: 'auto-refresh-readme' }),
+    }));
+    const __VLS_14 = __VLS_13({
+        to: ({ name: 'auto-refresh-readme' }),
+    }, ...__VLS_functionalComponentArgsRest(__VLS_13));
+    __VLS_15.slots.default;
+    var __VLS_15;
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        ...{ class: "doc-link-hint" },
+    });
     if (__VLS_ctx.refreshResult) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "action-result card mt-4" },
@@ -273,6 +291,9 @@ else {
 /** @type {__VLS_StyleScopedClasses['btn-primary']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn-secondary']} */ ;
+/** @type {__VLS_StyleScopedClasses['doc-link']} */ ;
+/** @type {__VLS_StyleScopedClasses['mt-3']} */ ;
+/** @type {__VLS_StyleScopedClasses['doc-link-hint']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-result']} */ ;
 /** @type {__VLS_StyleScopedClasses['card']} */ ;
 /** @type {__VLS_StyleScopedClasses['mt-4']} */ ;
@@ -292,6 +313,7 @@ var __VLS_dollars;
 const __VLS_self = (await import('vue')).defineComponent({
     setup() {
         return {
+            RouterLink: RouterLink,
             BasketTotal: BasketTotal,
             ChangeIndicator: ChangeIndicator,
             LogConsole: LogConsole,
